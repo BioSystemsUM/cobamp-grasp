@@ -76,16 +76,16 @@ def get_linear_gpr_model(model_object, max_flux=1e4):
     return gene_model, full_mat
 
 def get_integrated_gpr_model(model: ConstraintBasedModel):
-    cb_model_irrev, cb_model_rev_map = cb_model.make_irreversible()
+    cb_model_irrev, cb_model_rev_map = model.make_irreversible()
     gpr_model, _ = get_linear_gpr_model(model, max_flux=10000)
     rx_to_add = [n for n in gpr_model.reaction_names if 'RXD_' in n]
     mt_to_add = [n for n in gpr_model.metabolite_names if 'RXM_' in n]
 
     mat_ident = np.zeros([len(rx_to_add), len(cb_model_irrev.reaction_names)])
     for i, r in enumerate(rx_to_add):
-        mat_ident[i, cb_model_rev_map[cb_model.map_labels['reaction'][r[4:]]]] = -1
+        mat_ident[i, cb_model_rev_map[model.map_labels['reaction'][r[4:]]]] = -1
 
-    integrated_irrev_model, _ = cb_model.make_irreversible()
+    integrated_irrev_model, _ = model.make_irreversible()
     n_gpr_met, n_irrcb_rx = len(gpr_model.metabolite_names), len(integrated_irrev_model.reaction_names)
     integrated_irrev_model.add_metabolites(np.zeros([n_gpr_met, n_irrcb_rx]), gpr_model.metabolite_names)
     integrated_irrev_model.set_stoichiometric_matrix(mat_ident, rows=mt_to_add, update_only_nonzero=True)
