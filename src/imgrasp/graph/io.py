@@ -1,13 +1,23 @@
-from imgrasp.graph.core import GenericGraph
+from functools import reduce
+import pandas as pd
+from imgrasp.graph.core import GenericGraph, WeightedEdge, Node, Edge
 
 
 class SIFParser(object):
     @staticmethod
-    def parse(node_table, edge_table, id_columns=('id', 'id'), interaction_columns=('source','target')):
-        pass
-
-    def __generate_nodes(self, node_table, edge_table, id_columns=('id', 'id'), interaction_columns=('source','target'), edge_weight_col='weight'):
+    def parse(edge_table:pd.DataFrame, interaction_columns=('source','target'), weight_column='weight'):
         srccol, tarcol = interaction_columns
-        if node_table is None:
-            node_names = set(edge_table[srccol].unique()) | set(edge_table[tarcol].unique())
+        available_nodes = reduce(lambda x, y: x | y, (set(col.unique())
+                                                      for coln, col in
+                                                      edge_table[[srccol, tarcol]].iteritems()))
 
+        graph_nodes = {g: Node(g, {}) for g in available_nodes}
+        if weight_column in edge_table.columns:
+            graph_edges = {str(i): WeightedEdge(source=graph_nodes[row[srccol]], incident=graph_nodes[row[tarcol]],
+                                                weight=row[weight_column], identifier=str(i), annotation={})
+                           for i, row in edge_table.iterrows()}
+        else:
+            graph_edges = {str(i): Edge(source=graph_nodes[row[srccol]], incident=graph_nodes[row[tarcol]],
+                                        identifier=str(i), annotation={}) for i, row in edge_table.iterrows()}
+
+        return GenericGraph(graph_nodes.values(), graph_edges.values())
