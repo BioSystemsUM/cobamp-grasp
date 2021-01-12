@@ -176,9 +176,11 @@ def merge_linear_with_causal_model(model: ConstraintBasedModel, graph: GenericGr
     for edge_name, edge_props in edge_dict.items():
         src, tar, weight = edge_props
         is_positive = weight >= 0
-        edge_arg = {gene_metab_prefix + src: -1, gene_pool_prefix + tar: -1}
+        edge_arg = {gene_metab_prefix + src: -1}
         if is_positive:
-            edge_arg[gene_metab_prefix+tar] = 1
+            edge_arg[gene_pool_prefix + tar] = 1
+        else:
+            edge_arg[gene_pool_prefix + tar] = -1
         sri_items.append([interaction_prefix+edge_name, edge_arg])
 
     sri_names, sri_args = zip(*sri_items)
@@ -208,6 +210,7 @@ class IntegratedGPRModel(ConstraintBasedModel):
         ## TODO: make prefix a parameter in the future
         return IntegratedGPRSolution(sol, self.metabolic_rev_map, 'GXD_',
                                      names=[self.reaction_names[k] for k in self.metabolic_rev_map])
+
 
 class IntegratedGPRCausalModel(IntegratedGPRModel):
     def __init__(self, model: ConstraintBasedModel, graph: GenericGraph, solver=None, gpr_rx_bound=1e4,
