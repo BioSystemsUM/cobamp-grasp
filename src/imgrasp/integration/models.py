@@ -89,16 +89,21 @@ def get_linear_gpr_model(model_object, max_flux=1e4, gene_drain_prefix='GXD_', g
     R, Q = (np.concatenate(x, axis=1) for x in [comp_rows, pseudo_identity])
     Rg, Rc = R[:len(gene_names),:], R[len(gene_names):,:]
     gn, cn, orcn, rxn = len(gene_names), len(intermediate_node_dict), R.shape[1], Q.shape[0]
+
+    del R
+
     mat_blocks = [
         [np.eye(gn), G, Rg, np.zeros([gn, rxn])],
         [np.zeros([cn, gn]), np.eye(cn), Rc, np.zeros([cn, rxn])],
         [np.zeros([rxn, gn+cn]), Q, -np.eye(rxn)]
     ]
+
     rxd_ordered = {v:k for k,v in reaction_dict.items()}
     rxd_list_ordered = [rxd_ordered[i] for i in range(len(reaction_dict))]
     full_mat = np.vstack(list(map(np.hstack, mat_blocks)))
 
-    print(full_mat.shape)
+    del mat_blocks, Rg, Rc, R, Q
+
     rx_identifiers = [gene_drain_prefix+g for g in gene_names] + [and_component_prefix+str(i) for i in range(len(int_nodes_list))] + \
                      list(chain(*[[''.join([or_component_prefix,rx,'_'+str(i)]) for i in range(len(rx_to_node[rx]))]
                                   for rx in rxd_list_ordered])) + \
