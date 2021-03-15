@@ -131,8 +131,12 @@ def get_integrated_gpr_model(model: ConstraintBasedModel, max_flux=1e4, reaction
     integrated_irrev_model.add_metabolites(np.zeros([n_gpr_met, n_irrcb_rx]), gpr_model.metabolite_names)
     integrated_irrev_model.set_stoichiometric_matrix(mat_ident, rows=mt_to_add, update_only_nonzero=True)
 
+    del mat_ident
+
     padding = np.zeros([M, len(gpr_model.reaction_names)])
     int_model_mat = np.vstack([padding, gpr_model.get_stoichiometric_matrix()])
+
+    del padding
 
     integrated_irrev_model.add_reactions(int_model_mat, gpr_model.bounds, gpr_model.reaction_names)
     integrated_irrev_model.remove_reactions(rx_to_add)
