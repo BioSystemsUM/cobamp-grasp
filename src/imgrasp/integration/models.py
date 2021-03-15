@@ -117,21 +117,21 @@ def get_linear_gpr_model(model_object, max_flux=1e4, gene_drain_prefix='GXD_', g
 def get_integrated_gpr_model(model: ConstraintBasedModel, max_flux=1e4, reaction_metab_prefix='RXM_',
                              reaction_conv_prefix='RXD_'):
 
-    cb_model_irrev, cb_model_rev_map = model.make_irreversible()
+    integrated_irrev_model, cb_model_rev_map = model.make_irreversible()
+    M,N = [len(x) for x in [integrated_irrev_model.metabolite_names, integrated_irrev_model.reaction_names]]
     gpr_model, _ = get_linear_gpr_model(model, max_flux=max_flux)
     rx_to_add = [n for n in gpr_model.reaction_names if n.startswith(reaction_conv_prefix)]
     mt_to_add = [n for n in gpr_model.metabolite_names if n.startswith(reaction_metab_prefix)]
 
-    mat_ident = np.zeros([len(rx_to_add), len(cb_model_irrev.reaction_names)])
+    mat_ident = np.zeros([len(rx_to_add), len(integrated_irrev_model.reaction_names)])
     for i, r in enumerate(rx_to_add):
         mat_ident[i, cb_model_rev_map[model.map_labels['reaction'][r[4:]]]] = -1
 
-    integrated_irrev_model, _ = model.make_irreversible()
     n_gpr_met, n_irrcb_rx = len(gpr_model.metabolite_names), len(integrated_irrev_model.reaction_names)
     integrated_irrev_model.add_metabolites(np.zeros([n_gpr_met, n_irrcb_rx]), gpr_model.metabolite_names)
     integrated_irrev_model.set_stoichiometric_matrix(mat_ident, rows=mt_to_add, update_only_nonzero=True)
 
-    padding = np.zeros([len(cb_model_irrev.metabolite_names), len(gpr_model.reaction_names)])
+    padding = np.zeros([M, len(gpr_model.reaction_names)])
     int_model_mat = np.vstack([padding, gpr_model.get_stoichiometric_matrix()])
 
     integrated_irrev_model.add_reactions(int_model_mat, gpr_model.bounds, gpr_model.reaction_names)
@@ -200,6 +200,9 @@ class IntegratedGPRModel(ConstraintBasedModel):
         bounds = integrated_irrev_model.bounds
         rnames = integrated_irrev_model.reaction_names
         mnames = integrated_irrev_model.metabolite_names
+
+        del integrated_irrev_model, cb_model_rev_map, mt_to_add
+
         super().__init__(S=S, thermodynamic_constraints=bounds, reaction_names=rnames, metabolite_names=mnames,
                          optimizer=True, solver=solver, gprs=None)
 
