@@ -102,7 +102,7 @@ def get_linear_gpr_model(model_object, max_flux=1e4, gene_drain_prefix='GXD_', g
     rxd_list_ordered = [rxd_ordered[i] for i in range(len(reaction_dict))]
     full_mat = np.vstack(list(map(np.hstack, mat_blocks)))
 
-    del mat_blocks, Rg, Rc, R, Q
+    del mat_blocks, Rg, Rc, Q
 
     rx_identifiers = [gene_drain_prefix+g for g in gene_names] + [and_component_prefix+str(i) for i in range(len(int_nodes_list))] + \
                      list(chain(*[[''.join([or_component_prefix,rx,'_'+str(i)]) for i in range(len(rx_to_node[rx]))]
