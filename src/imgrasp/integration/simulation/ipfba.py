@@ -1,6 +1,7 @@
 from typing import Dict, Iterable
 from collections import Counter
 
+import warnings
 from numpy import zeros, ones
 from imgrasp.integration.models import IntegratedGPRCausalModel
 
@@ -105,9 +106,12 @@ class LooplessIPFBA(IPFBA):
         self.__mmc_number = mmc_number
 
     def set_mismatch_relaxation(self, mismatch_relaxation):
-        ec = self.model.model.model.constraints['ipfba_mmsum']
-        ec.lb = 0
-        ec.ub = int(mismatch_relaxation*self.__mmc_number)
+        if self.__mmc_number > 0:
+            ec = self.model.model.model.constraints['ipfba_mmsum']
+            ec.lb = 0
+            ec.ub = int(mismatch_relaxation*self.__mmc_number)
+        else:
+            raise Exception('Could not set mismatch relaxation - not enough mismatching interactions.')
 
     def __apply_loopless_constraints(self, mm_relaxation, eps):
         causal_edges = self.model.causal_interaction_edges
@@ -130,86 +134,92 @@ class LooplessIPFBA(IPFBA):
                     var_map[k+'_'+int_type] = var_inds
 
         genes_to_constrain = [k for k,v in Counter(['_'.join(k.split('_')[:-1]) for k in var_map.keys()]).items() if v == 2]
-        var_map = {k:v for k,v in var_map.items() if '_'.join(k.split('_')[:-1]) in genes_to_constrain}
 
-        vars_to_add = list(var_map.keys())
-        index_var_map = {v:k for k,v in enumerate(vars_to_add)}
+        if len(genes_to_constrain) > 1:
 
-        # i hate myself
-        offset = len(self.model.model.model.variables)
-        coffset = len(self.model.model.model.constraints)
+            var_map = {k:v for k,v in var_map.items() if '_'.join(k.split('_')[:-1]) in genes_to_constrain}
 
-        # add binary variables to represent active interaction types
-        act_var_list = self.model.model.add_variables_to_model(var_names=vars_to_add,
-                                                           lb=[0]*len(vars_to_add),
-                                                           ub=[1]*len(vars_to_add),
-                                                           var_types='binary')
+            vars_to_add = list(var_map.keys())
+            index_var_map = {v:k for k,v in enumerate(vars_to_add)}
 
-        S_new = zeros([len(vars_to_add),offset+len(vars_to_add)])
-        b_lb = [eps]*S_new.shape[0]
-        b_ub = [None]*S_new.shape[0]
-        b_zero = [0]*S_new.shape[0]
+            # i hate myself
+            offset = len(self.model.model.model.variables)
+            coffset = len(self.model.model.model.constraints)
 
-        for k,v in var_map.items():
-            S_new[index_var_map[k], v] = 1
+            # add binary variables to represent active interaction types
+            act_var_list = self.model.model.add_variables_to_model(var_names=vars_to_add,
+                                                               lb=[0]*len(vars_to_add),
+                                                               ub=[1]*len(vars_to_add),
+                                                               var_types='binary')
 
-        irows = list(range(S_new.shape[0]))
-        ivars = list(range(offset, offset+len(vars_to_add)))
-        icomp_pos = list([1]*len(vars_to_add))
-        icomp_neg = list([0]*len(vars_to_add))
+            S_new = zeros([len(vars_to_add),offset+len(vars_to_add)])
+            b_lb = [eps]*S_new.shape[0]
+            b_ub = [None]*S_new.shape[0]
+            b_zero = [0]*S_new.shape[0]
 
+            for k,v in var_map.items():
+                S_new[index_var_map[k], v] = 1
 
-
-        # for k,v in
-        # # add constraints to activate each binary variable if its associated interaction type is active
-        # for i in vars_to_add:
-        #     var_map[]
-        icpnames = ['looplessipfba_pos_'+str(i) for i in range(len(b_lb))]
-        indcpos = self.model.model.add_rows_to_model(S_new, b_lb, b_ub, only_nonzero=True,
-                                           indicator_rows=list(zip(irows, ivars, icomp_pos)), names=icpnames)
-
-        icnnames = ['looplessipfba_neg_'+str(i) for i in range(len(b_lb))]
-        indcneg = self.model.model.add_rows_to_model(S_new, b_zero, b_zero, only_nonzero=True,
-                                           indicator_rows=list(zip(irows, ivars, icomp_neg)),names=icnnames)
+            irows = list(range(S_new.shape[0]))
+            ivars = list(range(offset, offset+len(vars_to_add)))
+            icomp_pos = list([1]*len(vars_to_add))
+            icomp_neg = list([0]*len(vars_to_add))
 
 
-        gvars_to_add = [g+'_mismatch' for g in genes_to_constrain]
-        offset_ivm = len(index_var_map)
-        index_var_map.update({v:k+offset_ivm for k,v in dict(enumerate(gvars_to_add)).items()})
+
+            # for k,v in
+            # # add constraints to activate each binary variable if its associated interaction type is active
+            # for i in vars_to_add:
+            #     var_map[]
+            icpnames = ['looplessipfba_pos_'+str(i) for i in range(len(b_lb))]
+            indcpos = self.model.model.add_rows_to_model(S_new, b_lb, b_ub, only_nonzero=True,
+                                               indicator_rows=list(zip(irows, ivars, icomp_pos)), names=icpnames)
+
+            icnnames = ['looplessipfba_neg_'+str(i) for i in range(len(b_lb))]
+            indcneg = self.model.model.add_rows_to_model(S_new, b_zero, b_zero, only_nonzero=True,
+                                               indicator_rows=list(zip(irows, ivars, icomp_neg)),names=icnnames)
 
 
-        mm_var_list = self.model.model.add_variables_to_model(var_names=gvars_to_add,
-                                                           lb=[0]*len(gvars_to_add),
-                                                           ub=[1]*len(gvars_to_add),
-                                                           var_types='binary')
+            gvars_to_add = [g+'_mismatch' for g in genes_to_constrain]
+            offset_ivm = len(index_var_map)
+            index_var_map.update({v:k+offset_ivm for k,v in dict(enumerate(gvars_to_add)).items()})
 
-        var_subset = act_var_list + mm_var_list
 
-        S_mm = zeros([len(genes_to_constrain), len(var_subset)])
+            mm_var_list = self.model.model.add_variables_to_model(var_names=gvars_to_add,
+                                                               lb=[0]*len(gvars_to_add),
+                                                               ub=[1]*len(gvars_to_add),
+                                                               var_types='binary')
 
-        mirows, mivars = list(range(S_mm.shape[0])), list(range(offset_ivm, offset_ivm+len(var_subset)))
-        micomp_pos = list([1]*len(vars_to_add))
-        micomp_neg = list([0]*len(vars_to_add))
+            var_subset = act_var_list + mm_var_list
 
-        for i,k in enumerate(genes_to_constrain):
-            S_mm[i,[index_var_map[k+suff] for suff in ['_activation','_inhibition']]] = 1
+            S_mm = zeros([len(genes_to_constrain), len(var_subset)])
 
-        icmpnames = ['looplessipfba_mmpos_'+str(i) for i in range(S_mm.shape[0])]
-        mmcpos = self.model.model.add_rows_to_model(S_mm, [2]*S_mm.shape[0], [2]*S_mm.shape[0], only_nonzero=True,
-                                           indicator_rows=list(zip(mirows, mivars, micomp_pos)), vars=var_subset,
-                                                    names=icmpnames)
+            mirows, mivars = list(range(S_mm.shape[0])), list(range(offset_ivm, offset_ivm+len(var_subset)))
+            micomp_pos = list([1]*len(vars_to_add))
+            micomp_neg = list([0]*len(vars_to_add))
 
-        icmnnames = ['looplessipfba_mmneg_'+str(i) for i in range(S_mm.shape[0])]
-        mmcneg = self.model.model.add_rows_to_model(S_mm, [None]*S_mm.shape[0], [1]*S_mm.shape[0], only_nonzero=True,
-                                           indicator_rows=list(zip(mirows, mivars, micomp_neg)), vars=var_subset,
-                                                    names=icmnnames)
+            for i,k in enumerate(genes_to_constrain):
+                S_mm[i,[index_var_map[k+suff] for suff in ['_activation','_inhibition']]] = 1
 
-        mismatch_sum_mat = ones([1, len(mm_var_list)])
+            icmpnames = ['looplessipfba_mmpos_'+str(i) for i in range(S_mm.shape[0])]
+            mmcpos = self.model.model.add_rows_to_model(S_mm, [2]*S_mm.shape[0], [2]*S_mm.shape[0], only_nonzero=True,
+                                               indicator_rows=list(zip(mirows, mivars, micomp_pos)), vars=var_subset,
+                                                        names=icmpnames)
 
-        sum_constraint = self.model.model.add_rows_to_model(
-            mismatch_sum_mat, [0], [mm_relaxation*len(genes_to_constrain)], vars=mm_var_list, names=['ipfba_mmsum'])
+            icmnnames = ['looplessipfba_mmneg_'+str(i) for i in range(S_mm.shape[0])]
+            mmcneg = self.model.model.add_rows_to_model(S_mm, [None]*S_mm.shape[0], [1]*S_mm.shape[0], only_nonzero=True,
+                                               indicator_rows=list(zip(mirows, mivars, micomp_neg)), vars=var_subset,
+                                                        names=icmnnames)
 
-        self.__sum_constraint = sum_constraint[0]
+            mismatch_sum_mat = ones([1, len(mm_var_list)])
 
-        return [v.name for v in var_subset], icpnames+icnnames+icmpnames+icmnnames+['ipfba_mmsum'], \
-               len(genes_to_constrain)
+            sum_constraint = self.model.model.add_rows_to_model(
+                mismatch_sum_mat, [0], [mm_relaxation*len(genes_to_constrain)], vars=mm_var_list, names=['ipfba_mmsum'])
+
+            self.__sum_constraint = sum_constraint[0]
+
+            return [v.name for v in var_subset], icpnames+icnnames+icmpnames+icmnnames+['ipfba_mmsum'], \
+                   len(genes_to_constrain)
+        else:
+            warnings.warn('Could not set mismatch relaxation constraint - no mismatches are possible')
+            return [], [], 0
