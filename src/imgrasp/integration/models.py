@@ -5,8 +5,8 @@ from collections import OrderedDict
 from cobamp.core.models import ConstraintBasedModel
 from cobamp.core.optimization import Solution
 from cobamp.wrappers import get_model_reader
-from cobamp.algorithms.kshortest import value_map_apply
 
+import gc
 import numpy as np
 
 from imgrasp.graph.core import GenericGraph
@@ -40,7 +40,7 @@ class IntegratedGPRSolution(Solution):
 
 def get_linear_gpr_model(model_object, max_flux=1e4, gene_drain_prefix='GXD_', gene_metab_prefix='GXM_',
                          reaction_metab_prefix='RXM_', reaction_conv_prefix='RXD_', gpr_component_metab_prefix='GCOMP_',
-                         and_component_prefix='COMP_', or_component_prefix='ORCOMP_'):
+                         and_component_prefix='COMP_', or_component_prefix='ORCOMP_', initialize_optimizer=False):
 
     model = get_model_reader(model_object)
     gpr_container = model.gene_protein_reaction_rules
@@ -113,7 +113,8 @@ def get_linear_gpr_model(model_object, max_flux=1e4, gene_drain_prefix='GXD_', g
 
     gene_model = ConstraintBasedModel(S=full_mat,
                                       thermodynamic_constraints = [[0,max_flux] for i in range(full_mat.shape[1])],
-                                      reaction_names=rx_identifiers, metabolite_names=met_identifiers)
+                                      reaction_names=rx_identifiers, metabolite_names=met_identifiers,
+                                      optimizer=initialize_optimizer)
 
     return gene_model, full_mat
 
@@ -121,7 +122,7 @@ def get_linear_gpr_model(model_object, max_flux=1e4, gene_drain_prefix='GXD_', g
 
 def get_integrated_gpr_model(model: ConstraintBasedModel, max_flux=1e4, reaction_metab_prefix='RXM_',
                              reaction_conv_prefix='RXD_'):
-
+    model.model = None
     integrated_irrev_model, cb_model_rev_map = model.make_irreversible()
     M,N = [len(x) for x in [integrated_irrev_model.metabolite_names, integrated_irrev_model.reaction_names]]
     gpr_model, _ = get_linear_gpr_model(model, max_flux=max_flux)
@@ -136,15 +137,27 @@ def get_integrated_gpr_model(model: ConstraintBasedModel, max_flux=1e4, reaction
     integrated_irrev_model.add_metabolites(np.zeros([n_gpr_met, n_irrcb_rx]), gpr_model.metabolite_names)
     integrated_irrev_model.set_stoichiometric_matrix(mat_ident, rows=mt_to_add, update_only_nonzero=True)
 
+    print('get_integrated_gpr_model - Adding metabolites...')
     del mat_ident
 
+
     padding = np.zeros([M, len(gpr_model.reaction_names)])
-    int_model_mat = np.vstack([padding, gpr_model.get_stoichiometric_matrix()])
+    int_model_mat = np.vstack([padding, gpr_model.get_stoichiometric_matrix()]).astype(int)
 
     del padding
+    iim_bounds, iim_names  = gpr_model.bounds, gpr_model.reaction_names
 
-    integrated_irrev_model.add_reactions(int_model_mat, gpr_model.bounds, gpr_model.reaction_names)
+    del gpr_model
+
+    gc.collect()
+    gc.collect()
+
+    integrated_irrev_model.add_reactions(int_model_mat, iim_bounds, iim_names)
     integrated_irrev_model.remove_reactions(rx_to_add)
+
+    print('get_integrated_gpr_model - Adding reactions...')
+
+
     return integrated_irrev_model, cb_model_rev_map, mt_to_add
 
 
@@ -198,10 +211,10 @@ def merge_linear_with_causal_model(model: ConstraintBasedModel, graph: GenericGr
     return edge_dict
 
 class IntegratedGPRModel(ConstraintBasedModel):
-    def __init__(self, model: ConstraintBasedModel, solver=None, gpr_rx_bound=1e4, **kwargs):
+    def __init__(self, model: ConstraintBasedModel, solver=None, gpr_rx_bound=1e4, optimizer=False, **kwargs):
 
         integrated_irrev_model, cb_model_rev_map, mt_to_add = get_integrated_gpr_model(model, gpr_rx_bound, **kwargs)
-
+        print('Integrated GPR model',integrated_irrev_model.get_stoichiometric_matrix().shape)
         self.metabolic_fluxes = tuple(integrated_irrev_model.reaction_names)
         self.metabolic_rev_map = cb_model_rev_map
 
@@ -213,7 +226,7 @@ class IntegratedGPRModel(ConstraintBasedModel):
         del integrated_irrev_model, cb_model_rev_map, mt_to_add
 
         super().__init__(S=S, thermodynamic_constraints=bounds, reaction_names=rnames, metabolite_names=mnames,
-                         optimizer=True, solver=solver, gprs=None)
+                         optimizer=optimizer, solver=solver, gprs=None)
 
         ## TODO: variables that map metabolic reactions into their GPR control reactions
 
@@ -227,9 +240,9 @@ class IntegratedGPRModel(ConstraintBasedModel):
 class IntegratedGPRCausalModel(IntegratedGPRModel):
     def __init__(self, model: ConstraintBasedModel, graph: GenericGraph, solver=None, gpr_rx_bound=1e4,
                  gene_metab_prefix='GXM_',gene_drain_prefix='GXD_', gene_pool_prefix='GXP_',
-                 gene_poolrx_prefix='ExGXP_', interaction_prefix='SRI_'):
+                 gene_poolrx_prefix='ExGXP_', interaction_prefix='SRI_', **kwargs):
 
-        super().__init__(model, solver, gpr_rx_bound)
+        super().__init__(model, solver, gpr_rx_bound, **kwargs)
 
         self.__edges = merge_linear_with_causal_model(self, graph, gene_metab_prefix, gene_drain_prefix,
                                                      gene_pool_prefix, gene_poolrx_prefix, interaction_prefix)
