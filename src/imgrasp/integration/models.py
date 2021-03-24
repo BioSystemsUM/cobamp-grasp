@@ -17,7 +17,18 @@ class IntegratedGPRSolution(Solution):
         names, values = zip(*full_solution.var_values().items())
         metabolic_solution = OrderedDict()
         for k,v in reaction_mapping.items():
-            metabolic_solution[names[k]] = values[v] if isinstance(v, int) else values[v[0]] - values[v[1]]
+            if not isinstance(v, int):
+                flux = values[v[0]] - values[v[1]]
+                if flux >= 0:
+                    values[v[0]] = flux
+                    values[v[1]] = 0
+                else:
+                    values[v[0]] = 0
+                    values[v[1]] = -flux
+            else:
+                flux = values[v]
+
+            metabolic_solution[names[k]] = flux
 
         gene_activity_solution = OrderedDict()
         for i,k in enumerate(names):
@@ -30,8 +41,7 @@ class IntegratedGPRSolution(Solution):
                          status=full_solution.status(), objective_value=ov, **kwargs)
 
 
-        self.remaining_reactions = {k:full_solution.var_values()[k] for k in set(names) -
-                                    (set(metabolic_solution.keys()) | set(gene_activity_solution.keys()))}
+        self.all_reactions = {k:full_solution.var_values()[k] for k in set(names)}
 
     @property
     def gene_activity(self):
